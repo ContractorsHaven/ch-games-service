@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "helmchart.fullname" . }}
+  labels:
+    {{- include "helmchart.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "helmchart.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "helmchart.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "helmchart.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command: ['sh', '-c', 'until nc -z {{ include "helmchart.fullname" . }}-postgresql 5432; do echo waiting for postgres; sleep 2; done;']
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.registry }}/{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: SPRING_R2DBC_URL
+              value: "r2dbc:postgresql://{{ include "helmchart.fullname" . }}-postgresql:5432/{{ .Values.postgresql.database }}"
+            - name: SPRING_R2DBC_USERNAME
+              value: "{{ .Values.postgresql.user }}"
+            - name: SPRING_R2DBC_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "helmchart.fullname" . }}-db-secret
+                  key: password
+            - name: SPRING_FLYWAY_URL
+              value: "jdbc:postgresql://{{ include "helmchart.fullname" . }}-postgresql:5432/{{ .Values.postgresql.database }}"
+            - name: SPRING_FLYWAY_USER
+              value: "{{ .Values.postgresql.user }}"
+            - name: SPRING_FLYWAY_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "helmchart.fullname" . }}-db-secret
+                  key: password
+            {{- if .Values.opentelemetry.enabled }}
+            - name: OTEL_INSTRUMENTATION_JDBC_ENABLED
+              value: "{{ .Values.opentelemetry.instrumentations.jdbc }}"
+            - name: OTEL_INSTRUMENTATION_KAFKA_ENABLED
+              value: "{{ .Values.opentelemetry.instrumentations.kafka }}"
+            - name: OTEL_INSTRUMENTATION_LOGBACK_APPENDER_ENABLED
+              value: "{{ .Values.opentelemetry.instrumentations.logback }}"
+            - name: OTEL_INSTRUMENTATION_R2DBC_ENABLED
+              value: "{{ .Values.opentelemetry.instrumentations.r2dbc }}"
+            {{- end }}
+          startupProbe:
+            {{- toYaml .Values.startupProbe | nindent 12 }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

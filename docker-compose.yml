@@ -1,0 +1,36 @@
+services:
+  app:
+    build: .
+    image: ch-games-service:latest
+    ports:
+      - "9002:8080"
+    environment:
+      SPRING_R2DBC_URL: r2dbc:postgresql://db:5432/CH-GamesDB
+      SPRING_R2DBC_USERNAME: chuser
+      SPRING_R2DBC_PASSWORD: ch-password
+      SPRING_FLYWAY_URL: jdbc:postgresql://db:5432/CH-GamesDB
+      SPRING_FLYWAY_USER: chuser
+      SPRING_FLYWAY_PASSWORD: ch-password
+      SPRING_PROFILES_ACTIVE: docker
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:18.1-alpine
+    environment:
+      POSTGRES_USER: chuser
+      POSTGRES_PASSWORD: ch-password
+      POSTGRES_DB: CH-GamesDB
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U chuser -d CH-GamesDB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:

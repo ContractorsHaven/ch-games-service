@@ -3,7 +3,7 @@ replicaCount: 1
 image:
   repository: danyzift/ch-games-service
   pullPolicy: IfNotPresent
-  tag: "0.0.2"
+  tag: "0.0.3"
   registry: docker.io
 
 imagePullSecrets: []
@@ -31,16 +31,16 @@ service:
 resources:
   limits:
     cpu: 500m
-    memory: 1024Mi
-  requests:
-    cpu: 250m
     memory: 512Mi
+  requests:
+    cpu: 100m
+    memory: 256Mi
 
 startupProbe:
   httpGet:
     path: /actuator/health
     port: http
-  initialDelaySeconds: 45
+  initialDelaySeconds: 30
   periodSeconds: 10
   failureThreshold: 30
 
@@ -70,27 +70,13 @@ tolerations: []
 
 affinity: {}
 
+# Kafka configuration
+kafka:
+  bootstrapServers: "kafka.contractors-haven.svc.cluster.local:9092"
+
 # OpenTelemetry configuration
 opentelemetry:
-  enabled: false
+  enabled: true
   instrumentations:
-    jdbc: false
-    kafka: false
+    kafka: true
     logback: false
-    r2dbc: false
-
-# PostgreSQL configuration
-postgresql:
-  image: postgres:18.1-alpine
-  database: CH-GamesDB
-  user: chuser
-  password: ch-password
-  persistence:
-    size: 5Gi
-  resources:
-    limits:
-      cpu: 250m
-      memory: 512Mi
-    requests:
-      cpu: 100m
-      memory: 256Mi

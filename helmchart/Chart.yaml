@@ -3,4 +3,4 @@ name: ch-games-service
 description: Helm chart for ContractorsHaven Games Service
 type: application
 version: 0.0.1
-appVersion: "0.0.4"
+appVersion: "0.0.5"

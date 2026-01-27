@@ -10,7 +10,7 @@
     </parent>
     <groupId>org.binary.scripting</groupId>
     <artifactId>ch-games-service</artifactId>
-    <version>0.0.3-SNAPSHOT</version>
+    <version>0.0.4-SNAPSHOT</version>
     <name>ch-games-service</name>
     <description>ch-games-service</description>
     <url/>

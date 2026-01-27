@@ -5,10 +5,8 @@ import lombok.extern.slf4j.Slf4j;
 import org.binary.scripting.chgamesservice.dto.ScoreSubmissionRequest;
 import org.binary.scripting.chgamesservice.dto.ScoreSubmittedEvent;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatus;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 

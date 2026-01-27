@@ -17,10 +17,14 @@ spec:
     namespace: contractors-haven
   syncPolicy:
     automated:
-      prune: true
-      selfHeal: true
+      prune: true        # Delete resources when removed from Git
+      selfHeal: true     # Automatically sync when cluster state drifts
+      allowEmpty: false  # Don't sync if there are no resources
     syncOptions:
       - CreateNamespace=true
+      - ApplyOutOfSyncOnly=true
+      - PrunePropagationPolicy=foreground
+      - PruneLast=true
     retry:
       limit: 5
       backoff:

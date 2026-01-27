@@ -18,30 +18,16 @@ podAnnotations:
   # Enable OpenTelemetry Java auto-instrumentation (zero-code)
   instrumentation.opentelemetry.io/inject-java: "false"
 
+# Kafka configuration
+kafka:
+  bootstrapServers: "kafka-kafka.contractors-haven.svc.cluster.local:9092"
+
 # OpenTelemetry configuration - disable unused instrumentations for faster startup
-otel:
-  enabled: true
-  serviceName: ch-games-service
-  # Disable all by default, then enable only what we need
+opentelemetry:
+  enabled: false
   instrumentations:
-    # Enable instrumentations for this service
-    spring-webflux: true
-    r2dbc: true
-    kafka: true
-    netty: true
-    reactor: true
-    # Disable unused instrumentations
-    jdbc: false
-    hibernate: false
-    servlet: false
-    tomcat: false
-    jetty: false
-    grpc: false
-    aws-sdk: false
-    mongo: false
-    redis: false
-    elasticsearch: false
-    cassandra: false
+    kafka: false
+    logback: false
 
 # Health probes using actuator
 startupProbe:
@@ -76,18 +62,10 @@ service:
   type: ClusterIP
   port: 8080
 
-env:
-  JAVA_TOOL_OPTIONS: >
-    -XX:MaxRAMPercentage=70
-    -XX:InitialRAMPercentage=40
-    -XX:+UseG1GC
-    -XX:+UseStringDeduplication
-    -Dreactor.netty.ioWorkerCount=2
-  KAFKA_BOOTSTRAP_SERVERS: "kafka-kafka.contractors-haven.svc.cluster.local:9092"
-
-requests:
-  cpu: "200m"
-  memory: "384Mi"
-limits:
-  cpu: "1000m"
-  memory: "768Mi"
+resources:
+  requests:
+    cpu: "200m"
+    memory: "384Mi"
+  limits:
+    cpu: "1000m"
+    memory: "768Mi"

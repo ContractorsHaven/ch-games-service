@@ -2,9 +2,12 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [main, develop]
+    branches:
+      - main
+      - develop
   pull_request:
-    branches: [main]
+    branches:
+      - main
 
 env:
   DOCKER_IMAGE: danyzift/ch-games-service
@@ -13,128 +16,106 @@ env:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:18.1-alpine
-        env:
-          POSTGRES_USER: chuser
-          POSTGRES_PASSWORD: ch-password
-          POSTGRES_DB: CH-GamesDB
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0  # Full history for versioning
+
+      - name: Fetch all tags
+        run: git fetch --tags --force
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
           java-version: '21'
           distribution: 'temurin'
+          cache: 'maven'
 
       - name: Cache Maven Build Cache
         uses: actions/cache@v4
         with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+          path: ~/.m2/build-cache
+          key: ${{ runner.os }}-maven-build-cache-${{ hashFiles('**/pom.xml') }}
           restore-keys: |
-            ${{ runner.os }}-maven-
+            ${{ runner.os }}-maven-build-cache-
 
-      - name: Calculate version
+      - name: Determine Version
         id: version
         run: |
-          # Get latest tag or default to v0.0.0
+          # Get latest tag or default to 0.0.0
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
-          echo "Latest tag: $LATEST_TAG"
-
-          # Extract version numbers
           VERSION=${LATEST_TAG#v}
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
+
+          # Parse version
+          IFS='.' read -r -a VERSION_PARTS <<< "$VERSION"
+          MAJOR="${VERSION_PARTS[0]}"
+          MINOR="${VERSION_PARTS[1]}"
+          PATCH="${VERSION_PARTS[2]}"
 
           # Increment patch version
-          NEW_PATCH=$((PATCH + 1))
-          NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
+          PATCH=$((PATCH + 1))
+          NEW_VERSION="${MAJOR}.${MINOR}.${PATCH}"
 
-          echo "New version: $NEW_VERSION"
-          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "version=${NEW_VERSION}" >> $GITHUB_OUTPUT
+          echo "New version: ${NEW_VERSION}"
 
-      - name: Set Maven version
-        run: |
-          ./mvnw versions:set -DnewVersion=${{ steps.version.outputs.version }} -DgenerateBackupPoms=false
+      - name: Set Maven Version
+        run: mvn versions:set -DnewVersion=${{ steps.version.outputs.version }} -DgenerateBackupPoms=false
 
-      - name: Build and Test
-        run: ./mvnw clean verify
-        env:
-          SPRING_R2DBC_URL: r2dbc:postgresql://localhost:5432/CH-GamesDB
-          SPRING_R2DBC_USERNAME: chuser
-          SPRING_R2DBC_PASSWORD: ch-password
-          SPRING_FLYWAY_URL: jdbc:postgresql://localhost:5432/CH-GamesDB
-          SPRING_FLYWAY_USER: chuser
-          SPRING_FLYWAY_PASSWORD: ch-password
+      - name: Build, Test and Package
+        run: mvn clean verify
 
       - name: Set up Docker Buildx
-        if: github.ref == 'refs/heads/main'
         uses: docker/setup-buildx-action@v3
 
-      - name: Login to Docker Hub
-        if: github.ref == 'refs/heads/main'
+      - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build and push Docker image
-        if: github.ref == 'refs/heads/main'
+      - name: Build and Push Docker Image
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: ./Dockerfile.ci
+          file: Dockerfile.ci
           push: true
-          platforms: linux/arm64
           tags: |
-            ${{ env.REGISTRY }}/${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.version }}
-            ${{ env.REGISTRY }}/${{ env.DOCKER_IMAGE }}:latest
+            ${{ env.DOCKER_IMAGE }}:${{ steps.version.outputs.version }}
+            ${{ env.DOCKER_IMAGE }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/arm64  # For Raspberry Pi
 
       - name: Create Git Tag
         if: github.ref == 'refs/heads/main'
         run: |
-          git config user.name github-actions
-          git config user.email github-actions@github.com
-          git tag v${{ steps.version.outputs.version }}
-          git push origin v${{ steps.version.outputs.version }}
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git tag -a "v${{ steps.version.outputs.version }}" -m "Release v${{ steps.version.outputs.version }}"
+          git push origin "v${{ steps.version.outputs.version }}"
 
-      - name: Update Helm values with new image tag
+      - name: Update Helm Chart and POM Version
         if: github.ref == 'refs/heads/main'
         run: |
-          sed -i 's/tag: ".*"/tag: "${{ steps.version.outputs.version }}"/' helmchart/values.yaml
+          # Update only the application image tag (first occurrence), not postgresql
+          sed -i "0,/tag: .*/s/tag: .*/tag: ${{ steps.version.outputs.version }}/" helmchart/values.yaml
 
-      - name: Calculate next SNAPSHOT version
-        if: github.ref == 'refs/heads/main'
-        id: snapshot
-        run: |
-          VERSION="${{ steps.version.outputs.version }}"
-          IFS='.' read -r MAJOR MINOR PATCH <<< "$VERSION"
-          NEXT_PATCH=$((PATCH + 1))
-          SNAPSHOT_VERSION="$MAJOR.$MINOR.$NEXT_PATCH-SNAPSHOT"
-          echo "snapshot=$SNAPSHOT_VERSION" >> $GITHUB_OUTPUT
+          # Update Chart.yaml appVersion
+          sed -i "s/^appVersion: .*/appVersion: \"${{ steps.version.outputs.version }}\"/" helmchart/Chart.yaml
 
-      - name: Update pom.xml to next SNAPSHOT
-        if: github.ref == 'refs/heads/main'
-        run: |
-          ./mvnw versions:set -DnewVersion=${{ steps.snapshot.outputs.snapshot }} -DgenerateBackupPoms=false
+          # Calculate next snapshot version (increment patch by 1)
+          CURRENT_VERSION="${{ steps.version.outputs.version }}"
+          IFS='.' read -r -a VERSION_PARTS <<< "$CURRENT_VERSION"
+          NEXT_PATCH=$((VERSION_PARTS[2] + 1))
+          NEXT_SNAPSHOT="${VERSION_PARTS[0]}.${VERSION_PARTS[1]}.${NEXT_PATCH}-SNAPSHOT"
 
-      - name: Commit and push changes
-        if: github.ref == 'refs/heads/main'
-        run: |
-          git add helmchart/values.yaml pom.xml
-          git commit -m "chore: bump version to ${{ steps.snapshot.outputs.snapshot }} [skip ci]"
-          git push origin main
+          # Update pom.xml to next snapshot
+          mvn versions:set -DnewVersion=$NEXT_SNAPSHOT -DgenerateBackupPoms=false
+
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add helmchart/values.yaml helmchart/Chart.yaml pom.xml
+          git commit -m "chore: bump image to ${{ steps.version.outputs.version }}, pom to $NEXT_SNAPSHOT"
+          git push
